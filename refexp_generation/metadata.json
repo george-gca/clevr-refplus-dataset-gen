@@ -1,5 +1,5 @@
 {
-  "dataset": "CLEVR-v1.0",
+  "dataset": "CLEVR-Ref+-v1.0",
   "types": {
     "Object": null,
     "ObjectSet": null,
@@ -19,9 +19,30 @@
     ],
     "Material": [
       "rubber", "metal"
+    ],
+    "Ordinal_direction": [
+      "from left", "from right", "from front"
+    ],
+    "Ordinal_number": [
+      "the first one of the","the second one of the","the third one of the","the fourth one of the","the fifth one of the","the sixth one of the","the seventh one of the","the eighth one of the","the nineth one of the"
+    ],
+    "Visible": [
+	  "fully visible", "partially visible"
     ]
   },
   "functions": [
+    {
+      "name": "filter_visibleout",
+      "inputs": ["ObjectSet"],
+      "output": "ObjectSet",
+      "terminal": false
+    },
+    {
+      "name": "filter_ordinal",
+      "inputs": ["ObjectSet"],
+      "output": "ObjectSet",
+      "terminal": false
+    },
     {
       "name": "scene",
       "inputs": [],

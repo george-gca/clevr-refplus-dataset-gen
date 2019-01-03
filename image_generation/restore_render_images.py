@@ -9,10 +9,14 @@ from __future__ import print_function
 import math, sys, random, argparse, json, os, tempfile
 from datetime import datetime as dt
 from collections import Counter
+import get_b_box
+import restore_util
+import numpy as np
+import subprocess
 
 """
-Renders random scenes using Blender, each with with a random number of objects;
-each object has a random size, position, color, and shape. Objects will be
+Renders scenes using Blender according the scenes in CLEVR;
+Each object has a random size, position, color, and shape. Objects will be
 nonintersecting but may partially occlude each other. Output images will be
 written to disk as PNGs, and we will also write a JSON file for each image with
 ground-truth scene information.
@@ -58,10 +62,6 @@ parser.add_argument('--shape_dir', default='data/shapes',
     help="Directory where .blend files for object models are stored")
 parser.add_argument('--material_dir', default='data/materials',
     help="Directory where .blend files for materials are stored")
-parser.add_argument('--shape_color_combos_json', default=None,
-    help="Optional path to a JSON file mapping shape names to a list of " +
-         "allowed color names for that shape. This allows rendering images " +
-         "for CLEVR-CoGenT.")
 
 # Settings for objects
 parser.add_argument('--min_objects', default=3, type=int,
@@ -101,7 +101,7 @@ parser.add_argument('--output_image_dir', default='../output/images/',
 parser.add_argument('--output_scene_dir', default='../output/scenes/',
     help="The directory where output JSON scene structures will be stored. " +
          "It will be created if it does not exist.")
-parser.add_argument('--output_scene_file', default='../output/CLEVR_scenes.json',
+parser.add_argument('--output_scene_file', default='../output/clevr_ref+_scenes.json',
     help="Path to write a single JSON file containing all scene information")
 parser.add_argument('--output_blend_dir', default='output/blendfiles',
     help="The directory where blender scene files will be stored, if the " +
@@ -151,6 +151,8 @@ parser.add_argument('--render_tile_size', default=256, type=int,
          "quality of the rendered image but may affect the speed; CPU-based " +
          "rendering may achieve better performance using smaller tile sizes " +
          "while larger tile sizes may be optimal for GPU-based rendering.")
+parser.add_argument('--clevr_scene_path', type=str, required=True,
+    help="the path of CLEVR's scene file")
 
 def main(args):
   num_digits = 6
@@ -177,14 +179,13 @@ def main(args):
     blend_path = None
     if args.save_blendfiles == 1:
       blend_path = blend_template % (i + args.start_idx)
-    num_objects = random.randint(args.min_objects, args.max_objects)
     render_scene(args,
-      num_objects=num_objects,
       output_index=(i + args.start_idx),
       output_split=args.split,
       output_image=img_path,
       output_scene=scene_path,
       output_blendfile=blend_path,
+      idx=i + args.start_idx
     )
 
   # After rendering all images, combine the JSON files for each scene into a
@@ -208,12 +209,12 @@ def main(args):
 
 
 def render_scene(args,
-    num_objects=5,
     output_index=0,
     output_split='none',
     output_image='render.png',
     output_scene='render_json',
     output_blendfile=None,
+    idx=-1
   ):
 
   # Load the main blendfile
@@ -307,7 +308,64 @@ def render_scene(args,
       bpy.data.objects['Lamp_Fill'].location[i] += rand(args.fill_light_jitter)
 
   # Now make some random objects
-  objects, blender_objects = add_random_objects(scene_struct, num_objects, args, camera)
+  objects, blender_objects = add_random_objects(scene_struct, args, camera, idx)
+
+  for i in range(len(objects)):
+    objects[i]['idx'] = i+1
+
+  ### get b_box
+  box_dict = get_b_box.main(bpy.context, blender_objects)
+
+  def build_rendermask_graph(num_obj):
+    # switch on nodes
+    bpy.context.scene.use_nodes = True
+    tree = bpy.context.scene.node_tree
+    links = tree.links
+      
+    # clear default nodes
+    for n in tree.nodes:
+      tree.nodes.remove(n)
+        
+    # create input render layer node
+    rl = tree.nodes.new('CompositorNodeRLayers')      
+    rl.location = 185,285
+
+    scene = bpy.context.scene
+    nodes = scene.node_tree.nodes
+
+    render_layers = nodes['Render Layers']
+
+    ofile_nodes = [nodes.new("CompositorNodeOutputFile") for _ in range(num_obj)]
+    for _i, of_node in enumerate(ofile_nodes):    
+        of_node.base_path =  "./tmp_graph_output/indexob{}_{}".format(_i, idx)
+
+    idmask_list = [nodes.new("CompositorNodeIDMask") for _ in range(num_obj)]
+    for _i, o_node in enumerate(idmask_list):    
+        o_node.index = _i + 1
+    
+    bpy.data.scenes['Scene'].render.layers['RenderLayer'].use_pass_object_index = True
+
+    for _i in range(num_obj):
+        scene.node_tree.links.new(
+            render_layers.outputs['IndexOB'],
+            idmask_list[_i].inputs[0]
+            )
+        scene.node_tree.links.new(
+            idmask_list[_i].outputs[0],
+            ofile_nodes[_i].inputs['Image']
+            )
+
+  def get_diff_obj_points():
+    obj_index = dict()
+    index = 0
+    for obj in blender_objects :
+      index += 1
+      obj.pass_index = index
+      obj_index[obj.name] = index
+    return index
+
+  index = get_diff_obj_points()
+  build_rendermask_graph(index)
 
   # Render the scene and dump the scene data structure
   scene_struct['objects'] = objects
@@ -319,14 +377,40 @@ def render_scene(args,
     except Exception as e:
       print(e)
 
+
+  #save_as_json
+  cmd = ['python','./restore_img2json.py', str(index), str(idx)]
+  res = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+  res.wait()
+  if res.returncode != 0:
+    print("  os.wait:exit status != 0\n")
+    result = res.stdout.read()
+    print ("after read: {}".format(result))
+    raise Exception('error in img2json')
+
+  obj_mask = json.load(open('/tmp/obj_mask_{}.json'.format(idx)))
+  _path = '/tmp/obj_mask_{}.json'.format(idx)
+  os.system('rm ' + _path)
+
+
+  
+  scene_struct['obj_mask'] = obj_mask
+  scene_struct['obj_bbox'] = box_dict
+
   with open(output_scene, 'w') as f:
     json.dump(scene_struct, f, indent=2)
 
   if output_blendfile is not None:
     bpy.ops.wm.save_as_mainfile(filepath=output_blendfile)
 
+argv = utils.extract_args()
+args = parser.parse_args(argv)
+clevr_scene_path = args.clevr_scene_path
+clevr_scene = json.load(open(clevr_scene_path))
+clevr_scene = clevr_scene['scenes']
 
-def add_random_objects(scene_struct, num_objects, args, camera):
+
+def add_random_objects(scene_struct, args, camera, idx):
   """
   Add random objects to the current blender scene
   """
@@ -342,86 +426,39 @@ def add_random_objects(scene_struct, num_objects, args, camera):
     object_mapping = [(v, k) for k, v in properties['shapes'].items()]
     size_mapping = list(properties['sizes'].items())
 
-  shape_color_combos = None
-  if args.shape_color_combos_json is not None:
-    with open(args.shape_color_combos_json, 'r') as f:
-      shape_color_combos = list(json.load(f).items())
 
-  positions = []
   objects = []
   blender_objects = []
+  cob = clevr_scene[idx]['objects']
+  num_objects = len(cob)
   for i in range(num_objects):
-    # Choose a random size
-    size_name, r = random.choice(size_mapping)
 
-    # Try to place the object, ensuring that we don't intersect any existing
-    # objects and that we are more than the desired margin away from all existing
-    # objects along all cardinal directions.
-    num_tries = 0
-    while True:
-      # If we try and fail to place an object too many times, then delete all
-      # the objects in the scene and start over.
-      num_tries += 1
-      if num_tries > args.max_retries:
-        for obj in blender_objects:
-          utils.delete_object(obj)
-        return add_random_objects(scene_struct, num_objects, args, camera)
-      x = random.uniform(-3, 3)
-      y = random.uniform(-3, 3)
-      # Check to make sure the new object is further than min_dist from all
-      # other objects, and further than margin along the four cardinal directions
-      dists_good = True
-      margins_good = True
-      for (xx, yy, rr) in positions:
-        dx, dy = x - xx, y - yy
-        dist = math.sqrt(dx * dx + dy * dy)
-        if dist - r - rr < args.min_dist:
-          dists_good = False
-          break
-        for direction_name in ['left', 'right', 'front', 'behind']:
-          direction_vec = scene_struct['directions'][direction_name]
-          assert direction_vec[2] == 0
-          margin = dx * direction_vec[0] + dy * direction_vec[1]
-          if 0 < margin < args.margin:
-            print(margin, args.margin, direction_name)
-            print('BROKEN MARGIN!')
-            margins_good = False
-            break
-        if not margins_good:
-          break
-
-      if dists_good and margins_good:
-        break
-
-    # Choose random color and shape
-    if shape_color_combos is None:
-      obj_name, obj_name_out = random.choice(object_mapping)
-      color_name, rgba = random.choice(list(color_name_to_rgba.items()))
-    else:
-      obj_name_out, color_choices = random.choice(shape_color_combos)
-      color_name = random.choice(color_choices)
-      obj_name = [k for k, v in object_mapping if v == obj_name_out][0]
-      rgba = color_name_to_rgba[color_name]
-
-    # For cube, adjust the size a bit
+    sf = cob[i] 
+    theta = sf['rotation']
+    obj_name_out = sf['shape']
+    obj_name = restore_util.get_obj_name(obj_name_out)
+    size_name = sf['size']
+    r = restore_util.get_by_size(size_name)
     if obj_name == 'Cube':
       r /= math.sqrt(2)
+    x, y = sf['3d_coords'][:2]
+    mat_name_out = sf['material']
+    mat_name = restore_util.get_by_mat_name_out(mat_name_out)
 
-    # Choose random orientation for the object.
-    theta = 360.0 * random.random()
+    color_name = sf['color']
+    rgb = restore_util.get_by_colorname(color_name)
+    rgba = [float(c) / 255.0 for c in rgb] + [1.0]
 
     # Actually add the object to the scene
     utils.add_object(args.shape_dir, obj_name, r, (x, y), theta=theta)
     obj = bpy.context.object
     blender_objects.append(obj)
-    positions.append((x, y, r))
 
     # Attach a random material
-    mat_name, mat_name_out = random.choice(material_mapping)
     utils.add_material(mat_name, Color=rgba)
 
     # Record data about the object in the scene data structure
-    pixel_coords = utils.get_camera_coords(camera, obj.location)
+    pixel_coords, _wh = utils.get_camera_coords(camera, obj.location)
     objects.append({
       'shape': obj_name_out,
       'size': size_name,
@@ -432,15 +469,6 @@ def add_random_objects(scene_struct, num_objects, args, camera):
       'color': color_name,
     })
 
-  # Check that all objects are at least partially visible in the rendered image
-  all_visible = check_visibility(blender_objects, args.min_pixels_per_object)
-  if not all_visible:
-    # If any of the objects are fully occluded then start over; delete all
-    # objects from the scene and place them all again.
-    print('Some objects are occluded; replacing objects')
-    for obj in blender_objects:
-      utils.delete_object(obj)
-    return add_random_objects(scene_struct, num_objects, args, camera)
 
   return objects, blender_objects
 

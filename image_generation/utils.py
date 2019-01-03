@@ -62,7 +62,7 @@ def get_camera_coords(cam, pos):
   h = int(scale * scene.render.resolution_y)
   px = int(round(x * w))
   py = int(round(h - y * h))
-  return (px, py, z)
+  return (px, py, z), (w, h)
 
 
 def set_layer(obj, layer_idx):
