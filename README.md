@@ -1,6 +1,17 @@
 # CLEVR-Ref+ Dataset Generation
 
-This is the code used to generate the CLEVR-Ref+ dataset.
+This is the code used to generate the CLEVR-Ref+ dataset. See our [paper](https://arxiv.org/abs/1901.00850):
+```bash
+@article{liu2019clevr,
+  author    = {Runtao Liu and
+               Chenxi Liu and
+               Yutong Bai and
+               Alan Yuille},
+  title     = {CLEVR-Ref+: Diagnosing Visual Reasoning with Referring Expressions},
+  journal   = {arXiv preprint arXiv:1901.00850},
+  year      = {2019}
+}
+```
 
 You can use this code to render synthetic images and referring expressions for those images, like this:
 <div align="center">
