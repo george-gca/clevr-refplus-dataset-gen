@@ -469,9 +469,9 @@ def instantiate_templates_dfs(scene_struct, template, metadata, answer_counts,
             num_to_option[cnt].append(it_k)
 
         # choose one num randomly
-        rd_num = random.choice(num_to_option.keys())
+        rd_num = random.choice(list(num_to_option.keys()))
         # return one option_key
-        choice = random.choice(num_to_option[rd_num])
+        choice = random.choice(list(num_to_option[rd_num]))
         return choice
 
       #enumerate choose mask
@@ -497,7 +497,7 @@ def instantiate_templates_dfs(scene_struct, template, metadata, answer_counts,
           cur_next_vals[param_name] = param_val
           next_input = len(state['nodes']) + len(new_nodes) - 1
 
-        param_name_val_pair = zip(filter_side_inputs, k)
+        param_name_val_pair = list(zip(filter_side_inputs, k))
 
         param_name_val_pair = param_name_val_pair[:4] + \
                               [[[param_name_val_pair[4][0],param_name_val_pair[5][0]],

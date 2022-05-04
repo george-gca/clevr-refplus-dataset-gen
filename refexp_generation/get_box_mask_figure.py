@@ -93,7 +93,7 @@ def get_figure(args):
             break
 
         if _i % 5000 == 0:
-            print 'process', _i
+            print('process', _i)
 
         sce = dset.get_scene_of_refexp(rexp)
         rexp_text = str(rexp['refexp'])
