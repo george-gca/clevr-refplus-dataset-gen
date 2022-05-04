@@ -1,4 +1,4 @@
-# CLEVR-Ref+ Dataset Generation
+# CLEVR-Ref+ Dataset Generation (FIXED)
 
 This is the code used to generate the CLEVR-Ref+ dataset. See our [paper](https://arxiv.org/abs/1901.00850):
 ```bash
@@ -18,34 +18,32 @@ You can use this code to render synthetic images and referring expressions for t
   <img src="images/example.png" width="800px">
 </div>
 
-All code was developed and tested on Ubuntu 16.04.
+All code was developed and tested on Ubuntu 16.04. **All I did was update it to run on Ubuntu 21.10.**
 
 ## Step 1: Generating Images
-First we render synthetic images using [Blender](https://www.blender.org/), outputting both rendered images as well as a JSON file containing ground-truth scene information for each image.
+First we render synthetic images using [Blender](https://www.blender.org/), outputting both rendered images as well as a JSON file containing ground-truth scene information for each image. **After a long trial and error to update the code to support newer versions of blender, I finally gave up and tried to find which Blender version was used. I found that the code works with [Blender 2.79b](https://download.blender.org/release/Blender2.79/blender-2.79b-linux-glibc219-x86_64.tar.bz2). Download it, uncompress it, and use this as your Blender path.**
 
-Blender ships with its own installation of Python which is used to execute scripts that interact with Blender; you'll need to add the `image_generation` directory to Python path of Blender's bundled Python. The easiest way to do this is by adding a `.pth` file to the `site-packages` directory of Blender's Python, like this:
+Blender ships with its own installation of Python which is used to execute scripts that interact with Blender; you'll need to add the `image_generation` directory to Python path of Blender's bundled Python. The easiest way to do this is by adding a `.pth` file to the `site-packages` directory of Blender's Python, like this **(since I downloaded Blender to my Downloads folder, I use it like this)**:
 
 ```bash
-echo $PWD/image_generation >> $BLENDER/$VERSION/python/lib/python3.5/site-packages/clevr_ref+.pth
+echo $PWD/image_generation >> ~/Downloads/blender-2.79b-linux-glibc219-x86_64/2.79/python/lib/python3.5/site-packages/clevr_ref+.pth
 ```
 
-where `$BLENDER` is the directory where Blender is installed and `$VERSION` is your Blender version;
+Second you need to download the [CLEVR 1.0 dataset](https://cs.stanford.edu/people/jcjohns/clevr/) which will be used to restore scenes and get annotations. **You can Download [CLEVR v1.0 (no images) (86 MB)](https://dl.fbaipublicfiles.com/clevr/CLEVR_v1.0_no_images.zip) that will do just fine.**
 
-Second you need to download the [CLEVR 1.0 dataset](https://cs.stanford.edu/people/jcjohns/clevr/) which will be used to restore scenes and get annotations.
-
-After you set the required paths in the following command, you can render some images like this:
+After you set the required paths in the following command, you can render some images like this **(or you can just keep your path and call Blender with its full path)**:
 
 ```bash
 cd image_generation
 
-blender --background --python restore_render_images.py -- \
+~/Downloads/blender-2.79b-linux-glibc219-x86_64/blender --background --python restore_render_images.py -- \
     --split train \
     --width 480 \
     --height 320 \
     --use_gpu 0 \
     --start_idx 0 \
     --num_images 10 \
-    --clevr_scene_path /path/to/CLEVR_v1.0/scenes/CLEVR_train_scenes.json
+    --clevr_scene_path ~/Downloads/CLEVR_v1.0_no_images/CLEVR_v1.0/scenes/CLEVR_train_scenes.json
 ```
 
 If you have an NVIDIA GPU with CUDA installed then you can use the GPU to accelerate rendering. This requires you to modify the `--use_gpu` option.
@@ -59,10 +57,10 @@ Next we generate referring expressions, functional programs, and ground-truth fo
 This step takes as input the single JSON file containing all ground-truth scene information, and outputs a JSON file 
 containing referring expressions, ground-truth, and functional programs for the referring expressions in a single JSON file.
 
-After you set the required paths and parameters, you can generate referring expressions like this:
+After you set the required paths and parameters, you can generate referring expressions like this **(note: you need to install the numpy and opencv-python packages)**:
 
 ```bash
-cd refexp_generation
+cd ../refexp_generation
 
 python generate_refexp.py \
     --template_dir clevr_ref+_templates/ \
